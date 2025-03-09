@@ -6,10 +6,10 @@ use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 
 /// Motion Status that the callback can send
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub enum MotionStatus {
     /// Sent when motion is first detected
-    Start(Instant),
+    Start(Instant, Option<String>),
     /// Sent when motion stops
     Stop(Instant),
     /// Sent when an Alarm about something other than motion was received
@@ -34,7 +34,7 @@ impl MotionData {
     pub fn motion_detected(&mut self) -> Result<Option<bool>> {
         self.consume_motion_events()?;
         Ok(match &self.last_update {
-            MotionStatus::Start(_) => Some(true),
+            MotionStatus::Start(_, _) => Some(true),
             MotionStatus::Stop(_) => Some(false),
             MotionStatus::NoChange(_) => None,
         })
@@ -47,7 +47,7 @@ impl MotionData {
     pub fn motion_detected_within(&mut self, duration: Duration) -> Result<Option<bool>> {
         self.consume_motion_events()?;
         Ok(match &self.last_update {
-            MotionStatus::Start(_) => Some(true),
+            MotionStatus::Start(_, _) => Some(true),
             MotionStatus::Stop(time) => Some((Instant::now() - *time) < duration),
             MotionStatus::NoChange(_) => None,
         })
@@ -66,7 +66,7 @@ impl MotionData {
             }
         }
         if let Some(last) = results.last() {
-            self.last_update = *last;
+            self.last_update = last.clone();
         }
         Ok(results)
     }
@@ -77,10 +77,10 @@ impl MotionData {
     pub async fn next_motion(&mut self) -> Result<MotionStatus> {
         let motions = self.consume_motion_events()?;
         if let Some(last) = motions.last() {
-            Ok(*last)
+            Ok(last.clone())
         } else if let Some(moition) = self.rx.recv().await {
             let moition = moition?;
-            self.last_update = moition;
+            self.last_update = moition.clone();
             Ok(moition)
         } else {
             Err(Error::Other("Motion dropped"))
@@ -92,7 +92,7 @@ impl MotionData {
     /// It must be stopped for at least the given duration
     pub async fn await_stop(&mut self, duration: Duration) -> Result<()> {
         let motions = self.consume_motion_events()?;
-        let mut last_motion = motions.last().copied();
+        let mut last_motion = motions.last().cloned();
         loop {
             if let Some(MotionStatus::Stop(time)) = last_motion {
                 // In stop state
@@ -106,7 +106,7 @@ impl MotionData {
                         v = async {
                             loop {
                                 match self.next_motion().await {
-                                    n @ Ok(MotionStatus::Start(_)) => {return n;},
+                                    n @ Ok(MotionStatus::Start(_, _)) => {return n;},
                                     n @ Err(_) => {return n;},
                                     _ => {continue;}
                                 }
@@ -129,9 +129,9 @@ impl MotionData {
     /// The motion must have a minimum duration as given
     pub async fn await_start(&mut self, duration: Duration) -> Result<()> {
         let motions = self.consume_motion_events()?;
-        let mut last_motion = motions.last().copied();
+        let mut last_motion = motions.last().cloned();
         loop {
-            if let Some(MotionStatus::Start(time)) = last_motion {
+            if let Some(MotionStatus::Start(time, _)) = last_motion {
                 // In start state
                 if duration.is_zero() || (Instant::now() - time) > duration {
                     return Ok(());
@@ -239,6 +239,12 @@ impl BcCamera {
                                     let mut result = MotionStatus::NoChange(Instant::now());
                                     for alarm_event in &alarm_event_list.alarm_events {
                                         if alarm_event.channel_id == channel_id {
+                                            // Log complet de l'événement d'alarme pour le débogage
+                                            log::info!("Alarm event received: {:?}", alarm_event);
+                                            
+                                            // Log spécifique pour le champ ai_type
+                                            log::info!("AI type: {:?}", alarm_event.ai_type);
+                                            
                                             if alarm_event.status != "none"
                                                 || alarm_event
                                                     .ai_type
@@ -246,9 +252,31 @@ impl BcCamera {
                                                     .map(|ai_type| ai_type != "none")
                                                     .unwrap_or(false)
                                             {
-                                                result = MotionStatus::Start(Instant::now());
+                                                // Utiliser directement la valeur de ai_type si elle est disponible et différente de "none"
+                                                let detection_type = if let Some(ai_type) = &alarm_event.ai_type {
+                                                    if ai_type != "none" {
+                                                        // Si ai_type est présent et différent de "none", l'utiliser
+                                                        log::info!("DETECTION TYPE: AI Detection: {}", ai_type);
+                                                        Some(ai_type.clone())
+                                                    } else {
+                                                        // Si ai_type est "none", utiliser None
+                                                        log::info!("DETECTION TYPE: Motion Detection simple (sans AI)");
+                                                        None
+                                                    }
+                                                } else {
+                                                    // Si ai_type n'est pas présent, utiliser None
+                                                    log::info!("DETECTION TYPE: Motion Detection simple (sans AI)");
+                                                    None
+                                                };
+                                                
+                                                log::info!("DETECTION TYPE SET TO: {:?}", detection_type);
+                                                log::info!("CREATING MotionStatus::Start WITH DETECTION TYPE: {:?}", detection_type);
+                                                
+                                                result = MotionStatus::Start(Instant::now(), detection_type);
                                                 break;
                                             } else {
+                                                log::info!("MOTION STOPPED, NO AI DETECTION");
+                                                log::info!("CREATING MotionStatus::Stop");
                                                 result = MotionStatus::Stop(Instant::now());
                                                 break;
                                             }

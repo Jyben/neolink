@@ -312,7 +312,7 @@ impl NeoCam {
                 v = async {
                     let mut md = md_permit_instance.motion().await.with_context(|| "Unable to acquire motion watcher")?;
                     loop{
-                        md.wait_for(|md| matches!(md, MdState::Start(_))).await.with_context(|| "MD Watcher lost")?;
+                        md.wait_for(|md| matches!(md, MdState::Start(_, _))).await.with_context(|| "MD Watcher lost")?;
                         let _permit = md_permit_instance.permit().await.with_context(|| "Unuable to acquire motion permit")?;
                         md.wait_for(|md| matches!(md, MdState::Stop(_))).await.with_context(|| "MD Watcher lost")?;
                         // Try waiting for 30s
@@ -320,7 +320,7 @@ impl NeoCam {
                         // loop early to reaquire the permit
                         tokio::select!{
                             _ = sleep(Duration::from_secs(30)) => {},
-                            v = md.wait_for(|md| matches!(md, MdState::Start(_))) => {v.with_context(|| "MD Watcher lost")?;},
+                            v = md.wait_for(|md| matches!(md, MdState::Start(_, _))) => {v.with_context(|| "MD Watcher lost")?;},
                         }
                     }
                 } => {

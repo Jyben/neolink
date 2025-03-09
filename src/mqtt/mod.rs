@@ -308,6 +308,10 @@ async fn listen_on_camera(camera: NeoInstance, mqtt_instance: MqttInstance) -> R
                     .await
                     .with_context(|| format!("Failed to publish motion unknown for {}", camera_name))?;
                 mqtt_instance
+                    .send_message("status/motion_type", "none", true)
+                    .await
+                    .with_context(|| format!("Failed to publish motion type none for {}", camera_name))?;
+                mqtt_instance
                     .send_message("status/notification", "unknown", true)
                     .await
                     .with_context(|| format!("Failed to publish push notification unknown for {}", camera_name))?;
@@ -454,18 +458,46 @@ async fn listen_on_camera(camera: NeoInstance, mqtt_instance: MqttInstance) -> R
                         let mut md = camera_motion.motion().await?;
                         loop {
                             let v = async {
-                                md.wait_for(|state| matches!(state, MdState::Start(_))).await.with_context(|| {
+                                md.wait_for(|state| matches!(state, MdState::Start(_, _))).await.with_context(|| {
                                     format!("{}: MdStart Watch Dropped", camera_name)
                                 })?;
+                                
+                                // Publier un message MQTT pour le type de mouvement
+                                log::info!("MdState before extraction: {:?}", md.borrow());
+                                let detection_type = if let MdState::Start(_, Some(detection_type)) = &*md.borrow() {
+                                    log::info!("Motion detection with type: {:?}", detection_type);
+                                    detection_type.clone()
+                                } else if let MdState::Start(_, None) = &*md.borrow() {
+                                    log::info!("Motion detection with None type");
+                                    "generic".to_string()
+                                } else {
+                                    log::info!("Motion detection with generic type, MdState pattern not matched: {:?}", md.borrow());
+                                    "generic".to_string()
+                                };
+                                
+                                log::info!("Publishing motion_type: {}", detection_type);
+                                mqtt_motion.send_message("status/motion_type", &detection_type, true).await.with_context(|| {
+                                    format!("{}: Failed to publish motion type", camera_name)
+                                })?;
+                                
+                                // Publier le message MQTT standard pour la compatibilité
                                 mqtt_motion.send_message("status/motion", "on", true).await.with_context(|| {
                                     format!("{}: Failed to publish motion start", camera_name)
                                 })?;
+                                
                                 md.wait_for(|state| matches!(state, MdState::Stop(_))).await.with_context(|| {
                                     format!("{}: MdStop Watch Dropped", camera_name)
                                 })?;
+                                
+                                // Réinitialiser le type de mouvement
+                                mqtt_motion.send_message("status/motion_type", "none", true).await.with_context(|| {
+                                    format!("{}: Failed to reset motion type", camera_name)
+                                })?;
+                                
                                 mqtt_motion.send_message("status/motion", "off", true).await.with_context(|| {
                                     format!("{}: Failed to publish motion stop", camera_name)
                                 })?;
+                                
                                 AnyResult::Ok(())
                             }.await;
                             match v.map_err(|e| e.downcast::<neolink_core::Error>()) {

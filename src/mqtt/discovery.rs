@@ -479,6 +479,42 @@ pub(crate) async fn enable_discovery(
                         cam_config.name
                     )
                 })?;
+                
+                // Ajout d'un capteur pour le type de mouvement
+                let motion_type_data = DiscoverySensor {
+                    // Common across all potential features
+                    device: device.clone(),
+                    availability: availability.clone(),
+
+                    // Identifiers
+                    name: format!("{} Motion Type", friendly_name.as_str()),
+                    unique_id: format!("neolink_{}_motion_type", cam_config.name),
+                    icon: Some("mdi:motion-sensor".to_string()),
+
+                    // Sensor specific
+                    state_topic: format!("neolink/{}/status/motion_type", cam_config.name),
+                    state_class: "measurement".to_string(),
+                    unit_of_measurement: "".to_string(),
+                };
+
+                // Register the motion type sensor
+                mqtt.send_message_with_root_topic(
+                    &format!(
+                        "{}/sensor/{}",
+                        discovery_config.topic, &motion_type_data.unique_id
+                    ),
+                    "config",
+                    &serde_json::to_string(&motion_type_data)
+                        .with_context(|| "Could not serialise discovery motion type config into json")?,
+                    true,
+                )
+                .await
+                .with_context(|| {
+                    format!(
+                        "Failed to publish motion type auto-discover data on over MQTT for {}",
+                        cam_config.name
+                    )
+                })?;
             }
             Discoveries::Reboot => {
                 let config_data = DiscoveryButton {

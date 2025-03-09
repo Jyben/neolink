@@ -19,9 +19,7 @@ does has been reverse engineered.
 
 ## This Fork
 
-This fork is an extension of
-[thirtythreeforty's](https://github.com/thirtythreeforty/neolink) with additional
-features not yet in upstream master.
+This fork is an extension of [QuantumEntangledAndy's](https://github.com/QuantumEntangledAndy/neolink) with support for AI detection types. Now, we receive the type in the topic neolink/{]/status/motion_type.
 
 **Major Features**:
 

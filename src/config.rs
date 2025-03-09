@@ -49,6 +49,8 @@ pub(crate) struct Config {
     #[validate(nested)]
     #[serde(default)]
     pub(crate) users: Vec<UserConfig>,
+
+    pub event_log: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone, Validate, PartialEq, Eq)]

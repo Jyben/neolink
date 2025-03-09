@@ -17,10 +17,9 @@ use super::NeoInstance;
 use crate::{AnyResult, Result};
 use neolink_core::bc_protocol::MotionStatus;
 
-#[derive(Clone, Debug)]
-#[allow(dead_code)]
+#[derive(Debug, Clone)]
 pub(crate) enum MdState {
-    Start(Instant),
+    Start(Instant, Option<String>),
     Stop(Instant),
     Unknown,
 }
@@ -77,17 +76,28 @@ impl NeoCamMdThread {
                             loop {
                                 let event = md.next_motion().await.with_context(|| "Error in getting MD next_motion")?;
                                 match event {
-                                    MotionStatus::Start(at) => {
-                                        watcher.send_replace(
-                                            MdState::Start(at.into())
-                                        );
+                                    MotionStatus::Start(at, detection_type) => {
+                                        log::info!("Motion started with detection_type: {:?}", detection_type);
+                                        if detection_type.is_none() {
+                                            log::warn!("Detection type is None, this shouldn't happen if ai_type was set to 'people'");
+                                        }
+                                        
+                                        let new_state = MdState::Start(at.into(), detection_type.clone());
+                                        log::info!("Created new MdState: {:?}", new_state);
+                                        
+                                        watcher.send_replace(new_state);
+                                        log::info!("Updated MdState to Start");
                                     }
                                     MotionStatus::Stop(at) => {
+                                        log::info!("Motion stopped");
                                         watcher.send_replace(
                                             MdState::Stop(at.into())
                                         );
+                                        log::info!("Updated MdState to Stop");
                                     }
-                                    MotionStatus::NoChange(_) => {},
+                                    MotionStatus::NoChange(_) => {
+                                        log::info!("Motion status unchanged");
+                                    },
                                 }
                             }
                         }

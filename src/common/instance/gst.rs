@@ -41,7 +41,7 @@ impl NeoInstance {
             let mut md_permit = {
                 let md_state = md.borrow_and_update().clone();
                 match md_state {
-                    MdState::Start(_) => {
+                    MdState::Start(_, _) => {
                         log::info!("{name}::{stream:?}: Starting with Motion");
                         counter.create_activated().await?
                     }
@@ -60,7 +60,7 @@ impl NeoInstance {
                             Ok(_) => {
                                 let md_state: MdState = md.borrow_and_update().clone();
                                 match md_state {
-                                    MdState::Start(_) => {
+                                    MdState::Start(_, _) => {
                                         log::info!("{thread_name}::{stream:?}: Motion Started");
                                         md_permit.activate().await?;
                                     }
